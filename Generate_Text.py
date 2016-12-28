@@ -20,7 +20,7 @@ class HParam():
     state_size = 100
     num_layers = 3
     seq_length = 20
-    log_dir = './logs'
+    log_dir = '/tmp/Generate_text'
     metadata = 'metadata.tsv'
     gen_num = 500 # how many chars to generate
 
@@ -92,11 +92,11 @@ class Model():
             args.seq_length = 1
         with tf.name_scope('inputs'):
             self.input_data = tf.placeholder(
-                tf.int32, [args.batch_size, args.seq_length]) # 一次读入20个字的长度,
+                tf.int32, [args.batch_size, args.seq_length],name='x') # 一次读入20个字的长度,
             self.target_data = tf.placeholder(
-                tf.int32, [args.batch_size, args.seq_length]) #目标值也是读入20个字的长度
+                tf.int32, [args.batch_size, args.seq_length],name='y') #目标值也是读入20个字的长度
 
-        with tf.name_scope('rnn_model'):
+        with tf.name_scope('model'):
             self.cell = rnn_cell.BasicLSTMCell(args.state_size)  #应该是100个unit in the cell
             self.cell = rnn_cell.MultiRNNCell([self.cell] * args.num_layers)   #应该是3层,每层100个CELL的意思
             self.initial_state = self.cell.zero_state(
@@ -127,7 +127,7 @@ class Model():
             tf.scalar_summary('loss', self.cost)
 
         with tf.name_scope('optimize'):
-            self.lr = tf.placeholder(tf.float32, [])
+            self.lr = tf.placeholder(tf.float32, [],name='learningRate')
             tf.scalar_summary('learning_rate', self.lr)
 
             optimizer = tf.train.AdamOptimizer(self.lr)
@@ -143,7 +143,7 @@ class Model():
 
 def train(data, model, args):
     with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
+        sess.run(tf.initialize_all_variables())
         saver = tf.train.Saver()
         writer = tf.train.SummaryWriter(args.log_dir, sess.graph)
 
@@ -228,7 +228,7 @@ def main(infer):
 if __name__ == '__main__':
     msg = """
     Usage:
-    Training: 
+    Training:
         python3 gen_lyrics.py 0
     Sampling:
         python3 gen_lyrics.py 1
