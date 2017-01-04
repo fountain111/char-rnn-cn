@@ -1,28 +1,29 @@
 import os
 import sys
 import time
-
+import collections
 import numpy as np
 import tensorflow as tf
+from sklearn.utils import shuffle
+import pandas as pd
 #from tensorflow.contrib.tensorboard.plugins import projector
 from tensorflow.python.ops import rnn_cell, seq2seq
 
 
 class HParam():
 
-    batch_size = 1
-    n_epoch = 100
-    learning_rate = 0.01
+    batch_size = 128
+    n_epoch = 10000
+    learning_rate = 1e-2
     decay_steps = 1000
     decay_rate = 0.9
     grad_clip = 5
 
     state_size = 100
     num_layers = 3
-    seq_length = 20
+    seq_length = 12
     log_dir = '/tmp/Generate_text'
-    metadata = 'metadata.tsv'
-    gen_num = 500 # how many chars to generate
+    gen_num = 20 # how many chars to generate
 
 
 class DataGenerator():
@@ -30,23 +31,45 @@ class DataGenerator():
     def __init__(self, datafiles, args):
         self.seq_length = args.seq_length
         self.batch_size = args.batch_size
-        with open(datafiles, encoding='utf-8') as f:
-            self.data = f.read()
+        # 诗集
+        self.poetrys = []
+        with open(datafiles, "r", encoding='utf-8', ) as f:
+            for line in f:
+                try:
+                    title, content = line.strip().split(':')
+                    content = content.replace(' ', '')
+                    if '_' in content or '(' in content or '（' in content or '《' in content or '[' in content:
+                        continue
+                    if len(content) < 5 or len(content) > 79:
+                        continue
+                    content = '[' + content + ']'
+                    self.poetrys.append(content)
 
-        self.total_len = len(self.data)  # total data length
+                except Exception as e:
+                    pass
+        all_words = []
+        for self.poetrys in self.poetrys
+
+        self.poetrys = sorted(self.poetrys,key=lambda  line:len(line))
+        # vocabulary
+        self.total_lines = len(self.poetrys)  # total data length
         self.words = list(set(self.data))
         self.words.sort()
-        # vocabulary
         self.vocab_size = len(self.words)  # vocabulary size
         print('Vocabulary Size: ', self.vocab_size)
-        self.char2id_dict = {w: i for i, w in enumerate(self.words)}
+        self.char2id_dict = {w: i for i, w in enumerate(self.poetrys)}
         self.id2char_dict = {i: w for i, w in enumerate(self.words)}
+        '''
+    def next_batch(self):
+        if current_postion + batch_size > len(self.poetrys)
+            self.poetrys = shuffle(self.poetrys)
+            current_postion = 0
+        x_batch = self.poetrys[current_postion:current_postion+batch_szie]
+        y_batch = self.poetrys[current_postion:current_postion+batch_szie]
+        x_batch = x_batch
+        return x_batch,y_batch,len_sequence
+'''
 
-        # pointer position to generate current batch
-        self._pointer = 0
-
-        # save metadata file
-        self.save_metadata(args.metadata)
 
     def char2id(self, c):
         return self.char2id_dict[c]
@@ -54,31 +77,7 @@ class DataGenerator():
     def id2char(self, id):
         return self.id2char_dict[id]
 
-    def save_metadata(self, file):
-        with open(file, 'w') as f:
-            f.write('id\tchar\n')
-            for i in range(self.vocab_size):
-                c = self.id2char(i)
-                f.write('{}\t{}\n'.format(i, c))
 
-    def next_batch(self):
-        x_batches = []
-        y_batches = []
-        for i in range(self.batch_size):
-            if self._pointer + self.seq_length + 1 >= self.total_len:
-                self._pointer = 0
-            bx = self.data[self._pointer: self._pointer + self.seq_length]
-            by = self.data[self._pointer +
-                           1: self._pointer + self.seq_length + 1]
-            self._pointer += self.seq_length  # update pointer position
-
-            # convert to ids
-            bx = [self.char2id(c) for c in bx]
-            by = [self.char2id(c) for c in by]
-            x_batches.append(bx)
-            y_batches.append(by)
-
-        return x_batches, y_batches
 
 
 class Model():
@@ -105,10 +104,10 @@ class Model():
                 w = tf.get_variable(
                     'softmax_w', [args.state_size, data.vocab_size])
                 b = tf.get_variable('softmax_b', [data.vocab_size])
-                with tf.device("/cpu:0"):
-                    embedding = tf.get_variable(
+               # with tf.device("/cpu:0"):
+                embedding = tf.get_variable(
                         'embedding', [data.vocab_size, args.state_size])
-                    inputs = tf.nn.embedding_lookup(embedding, self.input_data)
+                inputs = tf.nn.embedding_lookup(embedding, self.input_data)
             outputs, last_state = tf.nn.dynamic_rnn(
                 self.cell, inputs, initial_state=self.initial_state)
 
@@ -124,47 +123,30 @@ class Model():
                                                     [targets],
                                                     [tf.ones_like(targets, dtype=tf.float32)]) #使target的概率值最大
             self.cost = tf.reduce_sum(loss) / args.batch_size
-            tf.scalar_summary('loss', self.cost)
+            tf.summary.scalar('loss', self.cost)
 
         with tf.name_scope('optimize'):
-            self.lr = tf.placeholder(tf.float32, [],name='learningRate')
-            tf.scalar_summary('learning_rate', self.lr)
-
+            self.lr = args.learning_rate
             optimizer = tf.train.AdamOptimizer(self.lr)
-            tvars = tf.trainable_variables()
-            grads = tf.gradients(self.cost, tvars)
-            for g in grads:
-                tf.histogram_summary(g.name, g)
-            grads, _ = tf.clip_by_global_norm(grads, args.grad_clip)
 
-            self.train_op = optimizer.apply_gradients(zip(grads, tvars))
-            self.merged_op = tf.merge_all_summaries()
+            self.train_op = optimizer.minimize(self.cost)
+            self.merged_op = tf.summary.merge_all()
+
 
 
 def train(data, model, args):
+    saver = tf.train.Saver()
+
     with tf.Session() as sess:
-        sess.run(tf.initialize_all_variables())
-        saver = tf.train.Saver()
-        writer = tf.train.SummaryWriter(args.log_dir, sess.graph)
+        sess.run(tf.global_variables_initializer())
+        writer = tf.summary.FileWriter(args.log_dir, sess.graph)
 
-        # Add embedding tensorboard visualization. Need tensorflow version
-        # >= 0.12.0RC0
-        #config = projector.ProjectorConfig()
-        #embed = config.embeddings.add()
-        #embed.tensor_name = 'rnnlm/embedding:0'
-        #embed.metadata_path = args.metadata
-        #projector.visualize_embeddings(writer, config)
 
-        max_iter = args.n_epoch * \
-            (data.total_len // args.seq_length) // args.batch_size
+        max_iter = args.n_epoch
         for i in range(max_iter):
-            learning_rate = args.learning_rate * \
-                (args.decay_rate ** (i // args.decay_steps))
-            x_batch, y_batch = data.next_batch()
-            feed_dict = {model.input_data: x_batch,
-                         model.target_data: y_batch, model.lr: learning_rate}
-            train_loss, summary, _, _ = sess.run([model.cost, model.merged_op, model.last_state, model.train_op],
-                                                 feed_dict)
+            x_batch, y_batch = data.next_batch(args.batch_size,data.samples,data.labels)
+            train_loss, summary, _ = sess.run([model.cost, model.merged_op, model.train_op],
+                                                 feed_dict={model.input_data:x_batch,model.target_data:y_batch})
 
             if i % 10 == 0:
                 writer.add_summary(summary, global_step=i)
@@ -183,7 +165,7 @@ def sample(data, model, args):
         saver.restore(sess, ckpt)
 
         # initial phrase to warm RNN
-        prime = u'你要离开我知道很简单'
+        prime = u'洪涛经变野'
         state = sess.run(model.cell.zero_state(1, tf.float32))
 
         for word in prime[:-1]:
@@ -209,9 +191,9 @@ def sample(data, model, args):
 
 
 def main(infer):
-
+    #infer = True
     args = HParam()
-    data = DataGenerator('JayLyrics.txt', args)
+    data = DataGenerator('poetry.txt', args)
     model = Model(args, data, infer=infer)
     #batcx,batchy = data.next_batch()
     #for i in range(len(batcx[0])):

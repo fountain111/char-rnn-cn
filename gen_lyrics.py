@@ -30,7 +30,7 @@ class DataGenerator():
     def __init__(self, datafiles, args):
         self.seq_length = args.seq_length
         self.batch_size = args.batch_size
-        with open(datafiles, encoding='utf-8') as f:
+        with open(datafiles) as f:
             self.data = f.read()
 
         self.total_len = len(self.data)  # total data length
@@ -105,10 +105,10 @@ class Model():
                 w = tf.get_variable(
                     'softmax_w', [args.state_size, data.vocab_size])
                 b = tf.get_variable('softmax_b', [data.vocab_size])
-                with tf.device("/cpu:0"):
-                    embedding = tf.get_variable(
+                #with tf.device("/cpu:0"):
+                embedding = tf.get_variable(
                         'embedding', [data.vocab_size, args.state_size])
-                    inputs = tf.nn.embedding_lookup(embedding, self.input_data)
+                inputs = tf.nn.embedding_lookup(embedding, self.input_data)
             outputs, last_state = tf.nn.dynamic_rnn(
                 self.cell, inputs, initial_state=self.initial_state)
 
@@ -143,7 +143,7 @@ class Model():
 
 def train(data, model, args):
     with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
+        sess.run(tf.initialize_all_variables())
         saver = tf.train.Saver()
         writer = tf.train.SummaryWriter(args.log_dir, sess.graph)
 
@@ -169,7 +169,7 @@ def train(data, model, args):
             if i % 10 == 0:
                 writer.add_summary(summary, global_step=i)
                 print('Step:{}/{}, training_loss:{:4f}'.format(i,
-                                                               max_iter, train_loss))
+                                                              max_iter, train_loss))
             if i % 2000 == 0 or (i + 1) == max_iter:
                 saver.save(sess, os.path.join(
                     args.log_dir, 'lyrics_model.ckpt'), global_step=i)
@@ -201,7 +201,7 @@ def sample(data, model, args):
             probs, state = sess.run([model.probs, model.last_state], feed_dict)
             p = probs[0]
             word = data.id2char(np.argmax(p))
-            print(word, end='')
+            print(word,)
             sys.stdout.flush()
             time.sleep(0.05)
             lyrics += word
