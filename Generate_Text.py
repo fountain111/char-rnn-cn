@@ -33,6 +33,7 @@ class DataGenerator():
         self.batch_size = args.batch_size
         # 诗集
         self.poetrys = []
+
         with open(datafiles, "r", encoding='utf-8', ) as f:
             for line in f:
                 try:
@@ -48,27 +49,36 @@ class DataGenerator():
                 except Exception as e:
                     pass
         all_words = []
-        for self.poetrys in self.poetrys
-
-        self.poetrys = sorted(self.poetrys,key=lambda  line:len(line))
+        for poetry in self.poetrys:
+            for word in poetry:
+             all_words += word
+        #self.poetrys = sorted(self.poetrys,key=lambda  line:len(line))
         # vocabulary
         self.total_lines = len(self.poetrys)  # total data length
-        self.words = list(set(self.data))
+        self.words = list(set(all_words))
         self.words.sort()
         self.vocab_size = len(self.words)  # vocabulary size
         print('Vocabulary Size: ', self.vocab_size)
-        self.char2id_dict = {w: i for i, w in enumerate(self.poetrys)}
+        self.char2id_dict = {w: i for i, w in enumerate(self.words)}
         self.id2char_dict = {i: w for i, w in enumerate(self.words)}
-        '''
-    def next_batch(self):
-        if current_postion + batch_size > len(self.poetrys)
-            self.poetrys = shuffle(self.poetrys)
-            current_postion = 0
-        x_batch = self.poetrys[current_postion:current_postion+batch_szie]
-        y_batch = self.poetrys[current_postion:current_postion+batch_szie]
-        x_batch = x_batch
-        return x_batch,y_batch,len_sequence
-'''
+
+        self.poetry_vectors = []
+        poetrys = self.poetrys
+        for poetry in self.poetrys:
+            poetry = [self.char2id(c) for c in poetry ]
+            self.poetry_vectors.append(poetry)
+        self.current_postion = 0
+
+    def next_batch(self,batch_size):
+        if self.current_postion + batch_size > self.total_lines:
+            self.poetry_vectors = shuffle(self.poetry_vectors)
+            self.current_postion = 0
+        x_batch = self.poetry_vectors[self.current_postion:self.current_postion+batch_size][:-1]
+        y_batch = self.poetry_vectors[self.current_postion:self.current_postion+batch_size][:-1]
+        self.current_postion += batch_size
+        return x_batch,y_batch
+
+
 
 
     def char2id(self, c):
@@ -144,7 +154,7 @@ def train(data, model, args):
 
         max_iter = args.n_epoch
         for i in range(max_iter):
-            x_batch, y_batch = data.next_batch(args.batch_size,data.samples,data.labels)
+            x_batch, y_batch = data.next_batch(args.batch_size)
             train_loss, summary, _ = sess.run([model.cost, model.merged_op, model.train_op],
                                                  feed_dict={model.input_data:x_batch,model.target_data:y_batch})
 
