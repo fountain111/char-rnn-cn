@@ -100,8 +100,8 @@ class Model():
                 tf.int32, [args.batch_size,args.seq_length],name='y') #目标值也是读入20个字的长度
 
         with tf.name_scope('model'):
-            self.cell = rnn_cell.BasicLSTMCell(args.state_size)  #应该是100个unit in the cell
-            self.cell = rnn_cell.MultiRNNCell([self.cell] * args.num_layers)   #应该是3层,每层100个CELL的意思
+            self.cell = rnn_cell.BasicLSTMCell(args.state_size)  
+            self.cell = rnn_cell.MultiRNNCell([self.cell] * args.num_layers)   #3层,每层100个CELL的意思
             self.initial_state = self.cell.zero_state(
                 args.batch_size, tf.float32)
             with tf.variable_scope('rnnlm'):
