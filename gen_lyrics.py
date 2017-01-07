@@ -10,8 +10,8 @@ from tensorflow.python.ops import rnn_cell, seq2seq
 
 class HParam():
 
-    batch_size = 1
-    n_epoch = 100
+    batch_size = 128
+    n_epoch = 10000
     learning_rate = 0.01
     decay_steps = 1000
     decay_rate = 0.9

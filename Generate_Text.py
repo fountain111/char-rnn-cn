@@ -9,21 +9,20 @@ import pandas as pd
 #from tensorflow.contrib.tensorboard.plugins import projector
 from tensorflow.python.ops import rnn_cell, seq2seq
 
-
 class HParam():
 
     batch_size = 128
-    n_epoch = 10000
-    learning_rate = 1e-2
+    n_epoch = 1000000
+    learning_rate = 0.02
     decay_steps = 1000
     decay_rate = 0.9
     grad_clip = 5
 
-    state_size = 100
+    state_size = 128
     num_layers = 3
-    seq_length = 12
+    seq_length = 50
     log_dir = '/tmp/Generate_text'
-    gen_num = 20 # how many chars to generate
+    gen_num = 100 # how many chars to generate
 
 
 class DataGenerator():
@@ -31,52 +30,47 @@ class DataGenerator():
     def __init__(self, datafiles, args):
         self.seq_length = args.seq_length
         self.batch_size = args.batch_size
-        # 诗集
-        self.poetrys = []
 
         with open(datafiles, "r", encoding='utf-8', ) as f:
-            for line in f:
-                try:
-                    title, content = line.strip().split(':')
-                    content = content.replace(' ', '')
-                    if '_' in content or '(' in content or '（' in content or '《' in content or '[' in content:
-                        continue
-                    if len(content) < 5 or len(content) > 79:
-                        continue
-                    content = '[' + content + ']'
-                    self.poetrys.append(content)
+            self.poetrys = f.read()
 
-                except Exception as e:
-                    pass
         all_words = []
+        self.poetry_vectors = []
+
         for poetry in self.poetrys:
-            for word in poetry:
-             all_words += word
-        #self.poetrys = sorted(self.poetrys,key=lambda  line:len(line))
+             all_words += poetry
         # vocabulary
-        self.total_lines = len(self.poetrys)  # total data length
+        self.total_words = len(self.poetrys)  # total data length
         self.words = list(set(all_words))
         self.words.sort()
         self.vocab_size = len(self.words)  # vocabulary size
         print('Vocabulary Size: ', self.vocab_size)
         self.char2id_dict = {w: i for i, w in enumerate(self.words)}
         self.id2char_dict = {i: w for i, w in enumerate(self.words)}
-
-        self.poetry_vectors = []
-        poetrys = self.poetrys
         for poetry in self.poetrys:
-            poetry = [self.char2id(c) for c in poetry ]
-            self.poetry_vectors.append(poetry)
+            self.poetry_vectors.append(self.char2id(poetry))
+
         self.current_postion = 0
 
-    def next_batch(self,batch_size):
-        if self.current_postion + batch_size > self.total_lines:
-            self.poetry_vectors = shuffle(self.poetry_vectors)
-            self.current_postion = 0
-        x_batch = self.poetry_vectors[self.current_postion:self.current_postion+batch_size][:-1]
-        y_batch = self.poetry_vectors[self.current_postion:self.current_postion+batch_size][:-1]
-        self.current_postion += batch_size
+    def next_batch(self,batch_size,seq_len):
+        x_batch = []
+        y_batch = []
+        for i in range(batch_size):
+            if self.current_postion + seq_len + 1 > self.total_words:
+                self.current_postion = 0
+            x_= self.poetrys[self.current_postion:self.current_postion + seq_len]
+            y_ = self.poetrys[self.current_postion+1:self.current_postion + seq_len+1]
+            x_ = [self.char2id(c) for c in x_]
+            y_ = [self.char2id(c) for c in y_]
+            x_batch.append(x_)
+            y_batch.append(y_)
+            self.current_postion += seq_len
+
         return x_batch,y_batch
+
+
+
+
 
 
 
@@ -101,9 +95,9 @@ class Model():
             args.seq_length = 1
         with tf.name_scope('inputs'):
             self.input_data = tf.placeholder(
-                tf.int32, [args.batch_size, args.seq_length],name='x') # 一次读入20个字的长度,
+                tf.int32, [args.batch_size,args.seq_length],name='x') # 一次读入20个字的长度,
             self.target_data = tf.placeholder(
-                tf.int32, [args.batch_size, args.seq_length],name='y') #目标值也是读入20个字的长度
+                tf.int32, [args.batch_size,args.seq_length],name='y') #目标值也是读入20个字的长度
 
         with tf.name_scope('model'):
             self.cell = rnn_cell.BasicLSTMCell(args.state_size)  #应该是100个unit in the cell
@@ -132,16 +126,14 @@ class Model():
             loss = seq2seq.sequence_loss_by_example([self.logits],
                                                     [targets],
                                                     [tf.ones_like(targets, dtype=tf.float32)]) #使target的概率值最大
-            self.cost = tf.reduce_sum(loss) / args.batch_size
+            self.cost = tf.reduce_mean(loss)
             tf.summary.scalar('loss', self.cost)
 
         with tf.name_scope('optimize'):
-            self.lr = args.learning_rate
-            optimizer = tf.train.AdamOptimizer(self.lr)
+            self.lr = tf.placeholder(tf.float32, [])
 
-            self.train_op = optimizer.minimize(self.cost)
-            self.merged_op = tf.summary.merge_all()
-
+            self.train_op = tf.train.AdamOptimizer(self.lr).minimize(self.cost)
+            self.merged_op =  tf.summary.merge_all()
 
 
 def train(data, model, args):
@@ -154,18 +146,26 @@ def train(data, model, args):
 
         max_iter = args.n_epoch
         for i in range(max_iter):
-            x_batch, y_batch = data.next_batch(args.batch_size)
+            learning_rate = args.learning_rate * \
+                            (args.decay_rate ** (i // args.decay_steps))
+            x_batch, y_batch = data.next_batch(args.batch_size,args.seq_length)
             train_loss, summary, _ = sess.run([model.cost, model.merged_op, model.train_op],
-                                                 feed_dict={model.input_data:x_batch,model.target_data:y_batch})
+                                                 feed_dict={model.input_data:x_batch,model.target_data:y_batch,model.lr: learning_rate})
 
             if i % 10 == 0:
                 writer.add_summary(summary, global_step=i)
                 print('Step:{}/{}, training_loss:{:4f}'.format(i,
                                                                max_iter, train_loss))
-            if i % 2000 == 0 or (i + 1) == max_iter:
-                saver.save(sess, os.path.join(
-                    args.log_dir, 'lyrics_model.ckpt'), global_step=i)
 
+            if i % 20000 == 0 or (i + 1) == max_iter:
+                saver.save(sess, os.path.join(
+                    args.log_dir, 'poe_model.ckpt'), global_step=i)
+
+def to_word(weights):
+    t = np.cumsum(weights)
+    s = np.sum(weights)
+    sample = int(np.searchsorted(t, np.random.rand(1) * s))
+    return sample
 
 def sample(data, model, args):
     saver = tf.train.Saver()
@@ -175,14 +175,9 @@ def sample(data, model, args):
         saver.restore(sess, ckpt)
 
         # initial phrase to warm RNN
-        prime = u'洪涛经变野'
+        prime = u'放'
         state = sess.run(model.cell.zero_state(1, tf.float32))
 
-        for word in prime[:-1]:
-            x = np.zeros((1, 1))
-            x[0, 0] = data.char2id(word)
-            feed = {model.input_data: x, model.initial_state: state}
-            state = sess.run(model.last_state, feed)
 
         word = prime[-1]
         lyrics = prime
@@ -232,5 +227,5 @@ if __name__ == '__main__':
         print('--Sampling--' if infer else '--Training--')
         main(infer)
     else:
-        print(msg)
+        #print(msg)
         sys.exit(1)
