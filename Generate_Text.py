@@ -22,7 +22,7 @@ class HParam():
     num_layers = 3
     seq_length = 50
     log_dir = '/tmp/Generate_text'
-    gen_num = 100 # how many chars to generate
+    gen_num = 200 # how many chars to generate
 
 
 class DataGenerator():
@@ -100,7 +100,7 @@ class Model():
                 tf.int32, [args.batch_size,args.seq_length],name='y') #目标值也是读入20个字的长度
 
         with tf.name_scope('model'):
-            self.cell = rnn_cell.BasicLSTMCell(args.state_size)  
+            self.cell = rnn_cell.BasicLSTMCell(args.state_size)
             self.cell = rnn_cell.MultiRNNCell([self.cell] * args.num_layers)   #3层,每层100个CELL的意思
             self.initial_state = self.cell.zero_state(
                 args.batch_size, tf.float32)
@@ -174,8 +174,8 @@ def sample(data, model, args):
         print(ckpt)
         saver.restore(sess, ckpt)
 
-        # initial phrase to warm RNN
-        prime = u'放'
+        # initial phrase to warm RNNbao
+        prime = u'邓'
         state = sess.run(model.cell.zero_state(1, tf.float32))
 
 
@@ -187,7 +187,7 @@ def sample(data, model, args):
             feed_dict = {model.input_data: x, model.initial_state: state}
             probs, state = sess.run([model.probs, model.last_state], feed_dict)
             p = probs[0]
-            word = data.id2char(np.argmax(p))
+            word = data.id2char(to_word(p))
             print(word, end='')
             sys.stdout.flush()
             time.sleep(0.05)
@@ -196,7 +196,7 @@ def sample(data, model, args):
 
 
 def main(infer):
-    #infer = True
+    infer = True
     args = HParam()
     data = DataGenerator('poetry.txt', args)
     model = Model(args, data, infer=infer)
@@ -216,9 +216,9 @@ if __name__ == '__main__':
     msg = """
     Usage:
     Training:
-        python3 gen_lyrics.py 0
+        python3 gen_text.py 0
     Sampling:
-        python3 gen_lyrics.py 1
+        python3 gen_text.py 1
     """
     main(0)
 
