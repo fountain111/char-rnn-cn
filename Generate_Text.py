@@ -20,7 +20,7 @@ class HParam():
 
     state_size = 128
     num_layers = 3
-    seq_length = 50
+    seq_length = 5
     log_dir = '/tmp/Generate_text'
     gen_num = 200 # how many chars to generate
 
@@ -140,6 +140,9 @@ def train(data, model, args):
     saver = tf.train.Saver()
 
     with tf.Session() as sess:
+        ckpt = tf.train.latest_checkpoint(args.log_dir)
+        print(ckpt)
+        saver.restore(sess, ckpt)
         sess.run(tf.global_variables_initializer())
         writer = tf.summary.FileWriter(args.log_dir, sess.graph)
 
@@ -175,7 +178,7 @@ def sample(data, model, args):
         saver.restore(sess, ckpt)
 
         # initial phrase to warm RNNbao
-        prime = u'邓'
+        prime = u'爱'
         state = sess.run(model.cell.zero_state(1, tf.float32))
 
 
